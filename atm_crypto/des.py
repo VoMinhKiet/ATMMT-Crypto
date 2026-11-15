@@ -104,20 +104,52 @@ def key_schedule(key: bytes) -> list:
     return subkeys
 
 
+def _sbox_lookup(i: int, six: int) -> int:
+    """Tra S-box thứ i với 6 bit đầu vào: bit đầu + bit cuối chọn hàng, 4 bit giữa chọn cột."""
+    row = ((six >> 4) & 2) | (six & 1)
+    col = (six >> 1) & 0xF
+    return SBOX[i][row * 16 + col]
+
+
+# ----------------------------------------------------------------------------
+# Bảng tra tính sẵn để tăng tốc (kết quả giống hệt _permute, chỉ nhanh hơn ~10 lần).
+# Hoán vị bit là phép tuyến tính theo XOR/OR, nên có thể tách đầu vào thành từng
+# byte, tra bảng kết quả hoán vị của byte đó rồi OR các kết quả lại.
+# ----------------------------------------------------------------------------
+
+def _byte_tables(table: list, in_bits: int) -> list:
+    """Với mỗi byte của đầu vào: (độ dịch, bảng 256 giá trị đã hoán vị)."""
+    tables = []
+    for shift in range(in_bits - 8, -1, -8):
+        tables.append((shift, [_permute(v << shift, table, in_bits) for v in range(256)]))
+    return tables
+
+
+def _fast_permute(value: int, tables: list) -> int:
+    out = 0
+    for shift, lut in tables:
+        out |= lut[(value >> shift) & 0xFF]
+    return out
+
+
+_IP_T = _byte_tables(IP, 64)
+_FP_T = _byte_tables(FP, 64)
+_E_T = _byte_tables(E, 32)
+# Gộp S-box và hoán vị P: _SP[i][six] = P(đầu ra 4 bit của S-box i đặt đúng vị trí).
+_SP = [[_permute(_sbox_lookup(i, six) << (28 - 4 * i), P, 32) for six in range(64)] for i in range(8)]
+
+
 def _feistel(right: int, subkey: int) -> int:
     """Hàm f(R, K) = P(S(E(R) XOR K))."""
-    x = _permute(right, E, 32) ^ subkey
+    x = _fast_permute(right, _E_T) ^ subkey
     out = 0
-    for i in range(8):
-        six = (x >> (42 - 6 * i)) & 0x3F
-        row = ((six >> 4) & 2) | (six & 1)       # bit đầu và bit cuối
-        col = (six >> 1) & 0xF                   # 4 bit giữa
-        out = (out << 4) | SBOX[i][row * 16 + col]
-    return _permute(out, P, 32)
+    for i, sp in enumerate(_SP):
+        out |= sp[(x >> (42 - 6 * i)) & 0x3F]
+    return out
 
 
 def _crypt_block(block: bytes, subkeys: list, trace: list = None) -> bytes:
-    state = _permute(int.from_bytes(block, "big"), IP, 64)
+    state = _fast_permute(int.from_bytes(block, "big"), _IP_T)
     left, right = state >> 32, state & 0xFFFFFFFF
     if trace is not None:
         trace.append(f"Sau IP    : L0 = {left:08X}   R0 = {right:08X}")
@@ -125,7 +157,7 @@ def _crypt_block(block: bytes, subkeys: list, trace: list = None) -> bytes:
         left, right = right, left ^ _feistel(right, subkey)
         if trace is not None:
             trace.append(f"Vòng {i:>2}   : L{i:<2}= {left:08X}   R{i:<2}= {right:08X}   K = {subkey:012X}")
-    out = _permute((right << 32) | left, FP, 64).to_bytes(8, "big")
+    out = _fast_permute((right << 32) | left, _FP_T).to_bytes(8, "big")
     if trace is not None:
         trace.append(f"Sau IP^-1 : {out.hex().upper()}")
     return out
@@ -137,12 +169,13 @@ class DES:
 
     def __init__(self, key: bytes):
         self.subkeys = key_schedule(key)
+        self._reversed = self.subkeys[::-1]  # giải mã: dùng khoá con theo thứ tự ngược
 
     def encrypt_block(self, block: bytes, trace: list = None) -> bytes:
         return _crypt_block(block, self.subkeys, trace)
 
     def decrypt_block(self, block: bytes, trace: list = None) -> bytes:
-        return _crypt_block(block, self.subkeys[::-1], trace)
+        return _crypt_block(block, self._reversed, trace)
 
     def describe_key(self) -> list:
         return [f"K{i:<2} = {k:012X}" for i, k in enumerate(self.subkeys, 1)]
