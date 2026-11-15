@@ -34,7 +34,7 @@ Sau khi chạy xong, file `Nhom17-Crypto.exe` nằm ngay trong thư mục projec
 
 ## Chạy kiểm thử
 
-Các bài kiểm thử dùng ví dụ trong slide bài giảng và vector chuẩn FIPS / NIST:
+Các bài kiểm thử dùng ví dụ và vector chuẩn FIPS / NIST:
 
 ```powershell
 python -m unittest discover -s tests -v
