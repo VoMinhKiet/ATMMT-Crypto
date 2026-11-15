@@ -1,5 +1,5 @@
-# File thực thi không đưa lên repo
-ATM_MaHoa.exe
+# File thực thi (.exe) không đưa lên repo – tự build bằng build.bat
+*.exe
 
 # Python
 __pycache__/
