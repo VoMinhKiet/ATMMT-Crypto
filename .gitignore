@@ -1,0 +1,19 @@
+# File thực thi không đưa lên repo
+ATM_MaHoa.exe
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# PyInstaller (build.bat tạo ra rồi tự xóa, phòng khi build lỗi)
+build/
+*.spec
+
+# Môi trường ảo / IDE / hệ điều hành
+.venv/
+venv/
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
